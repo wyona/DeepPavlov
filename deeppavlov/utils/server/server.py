@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import asyncio
+import argparse
+from deeppavlov.core.common.file import find_config
+from deeppavlov.core.commands.train import train_evaluate_model_from_config
 from collections import namedtuple
 from logging import getLogger
 from pathlib import Path
@@ -144,6 +147,11 @@ def interact(model: Chainer, payload: Dict[str, Optional[List]]) -> List:
     dialog_logger.log_out(result)
     return result
 
+def retrain_model(model: Chainer) -> List[str]:
+    configPath = retrainModel(model)
+    log.info("Configuration path: {}".format(configPath))
+    return ["Model retrained successfully"]
+
 
 def test_interact(model: Chainer, payload: Dict[str, Optional[List]]) -> List[str]:
     model_args = [arg or ["Test string."] for arg in payload.values()]
@@ -188,6 +196,14 @@ def start_model_server(model_config: Path,
 
     @app.post(model_endpoint, summary='A model endpoint')
     async def answer(item: Batch = Body(..., example=model_endpoint_post_example)) -> List:
+        log.info("Try to answer question {} ...".format(item))
+
+        # INFO: Check whether model has been retrained
+        # TODO: Check last modified instead reloading every time
+        if 3 > 2:
+            log.info("Reload model ...")
+            model = build_model(model_config)
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, interact, model, item.dict())
 
@@ -200,5 +216,38 @@ def start_model_server(model_config: Path,
     async def api() -> List[str]:
         return model_args_names
 
+    @app.post('/retrain', summary='Endpoint to retrain/refit model')
+    async def retrain() -> List[str]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, retrain_model, model)
+
     uvicorn.run(app, host=host, port=port, log_config=log_config, ssl_version=ssl_config.version,
                 ssl_keyfile=ssl_config.keyfile, ssl_certfile=ssl_config.certfile, timeout_keep_alive=20)
+
+# Retrain model
+def retrainModel(existingModel: Chainer) -> str:
+    log.info("Retrain")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("mode", help="select a mode, train or interact", type=str,
+                        choices={'train', 'evaluate', 'interact', 'predict', 'telegram', 'msbot', 'alexa', 'alice',
+                                 'riseapi', 'risesocket', 'agent-rabbit', 'download', 'install', 'crossval'})
+    parser.add_argument("config_path", help="path to a pipeline json config", type=str)
+    parser.add_argument("-e", "--start-epoch-num", dest="start_epoch_num", default=None,
+                        help="Start epoch number", type=int)
+    parser.add_argument("--recursive", action="store_true", help="Train nested configs")
+
+    args = parser.parse_args()
+    log.info("Arguments: {}".format(args))
+
+    pipeline_config_path = find_config(args.config_path)
+    log.info("Configuration path: {}".format(pipeline_config_path))
+
+    train_evaluate_model_from_config(pipeline_config_path,
+                                     recursive=args.recursive,
+                                     start_epoch_num=args.start_epoch_num)
+
+    #log.info("Reload model ...")
+    # TODO: Overwrite existing model!
+    #existingModel = build_model(pipeline_config_path)
+
+    return pipeline_config_path
