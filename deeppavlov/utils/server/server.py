@@ -235,8 +235,10 @@ def retrainModel(existingModel: Chainer) -> str:
     parser.add_argument("-e", "--start-epoch-num", dest="start_epoch_num", default=None,
                         help="Start epoch number", type=int)
     parser.add_argument("--recursive", action="store_true", help="Train nested configs")
+    parser.add_argument("-p", "--port", default=None, help="api port", type=int)
 
     args = parser.parse_args()
+
     log.info("Arguments: {}".format(args))
 
     pipeline_config_path = find_config(args.config_path)
